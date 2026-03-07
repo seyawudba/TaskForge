@@ -1,0 +1,25 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+django = "~=6.0.3"
+djangorestframework = "~=3.16.1"
+djoser = "~=2.3.3"
+celery = "~=5.6.2"
+celerybeat-redis = "~=0.1.5"
+redis = "~=7.2.1"
+requests = "~=2.32.5"
+pillow = "~=12.1.1"
+psycopg = "~=3.3.3"
+shortuuid = "~=1.0.13"
+whitenoise = "~=6.12.0"
+pytest = "~=9.0.2"
+model-bakery = "~=1.23.3"
+django-debug-toolbar = "~=6.2.0"
+
+[dev-packages]
+
+[requires]
+python_version = "3.12"

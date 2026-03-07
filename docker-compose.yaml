@@ -1,0 +1,187 @@
+services:
+  postgres:
+    image: postgres:18.3-alpine
+    env_file:
+      - appliances/.envs/.local/.postgres.env
+    container_name: taskforge-postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    volumes:
+      - taskforge-postgresql:/var/lib/postgresql/data
+    restart: on-failure
+
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.24.1-p1
+    container_name: taskforge-pgbouncer
+    restart: on-failure
+    env_file:
+      - appliances/.envs/.local/.pgbouncer.env
+    volumes:
+      - taskforge-pgbouncer:/var/lib/pgbouncer/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h $${PGBOUNCER_LISTEN_ADDR} -p $${PGBOUNCER_LISTEN_PORT} -U $${DB_USER}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  redis:
+    image: redis:7.0-alpine
+    container_name: taskforge-redis
+    command: redis-server --appendonly yes --appendfsync everysec
+    restart: on-failure
+    volumes:
+      - taskforge-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  backend:
+    image: backend-image
+    container_name: taskforge-backend
+    build:
+      context: .
+      dockerfile: ./docker-compose/Dockerfile
+      args:
+        DEV: ${DEV:-true}
+    env_file:
+      - appliances/.envs/.local/.app.env
+    volumes:
+      - .:/app/
+      - ./static:/app/static
+      - ./media:/app/media
+      - ./logs:/app/logs
+    logging:
+      driver: "json-file"
+      options:
+          max-size: "500m"
+          max-file: "5"
+    command: >
+      sh -c "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "--fail",
+          "http://127.0.0.1:8000/admin/"
+        ]
+      interval: 15s
+      retries: 5
+    depends_on:
+      redis:
+        condition: service_healthy
+      pgbouncer:
+        condition: service_healthy
+    restart: on-failure
+    ports:
+      - 8000:8000
+
+  rabbitmq:
+    image: rabbitmq:4.2.4-management-alpine
+    container_name: taskforge-rabbitmq
+    env_file:
+      - appliances/.envs/.local/.app.env
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-taskforge}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-taskforge}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_DEFAULT_VHOST:-taskforge}
+    ports:
+      - 5672:5672
+      - 15672:15672
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  celery:
+    image: backend-image
+    container_name: taskforge-celery
+    env_file:
+      - appliances/.envs/.local/.app.env
+    command: >
+      celery -A taskforge worker -l info -E
+    volumes:
+      - .:/app/
+      - ./static:/app/static
+      - ./media:/app/media
+      - ./logs:/app/logs
+    depends_on:
+      backend:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      pgbouncer:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "celery", "-A", "taskforge", "inspect", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  celerybeat:
+    image: backend-image
+    container_name: taskforge-celerybeat
+    env_file:
+      - appliances/.envs/.local/.app.env
+    command: >
+      celery -A taskforge beat -l info
+    volumes:
+      - .:/app/
+      - ./static:/app/static
+      - ./media:/app/media
+      - ./logs:/app/logs
+      - celerybeat-data:/app/celerybeat
+    depends_on:
+      backend:
+        condition: service_healthy
+      celery:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      pgbouncer:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: on-failure
+
+  flower:
+    image: backend-image
+    container_name: taskforge-flower
+    env_file:
+      - appliances/.envs/.local/.app.env
+    command: celery -A taskforge flower --port=5555
+    ports:
+      - "5555:5555"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      celery:
+        condition: service_healthy
+    restart: on-failure
+
+
+volumes:
+  taskforge-postgresql:
+  taskforge-pgbouncer:
+  taskforge-redis:
+  rabbitmq-data:
+  celerybeat-data:

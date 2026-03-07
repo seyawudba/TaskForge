@@ -1,0 +1,5 @@
+-r base.txt
+
+pytest~=9.0.2
+model-bakery~=1.23.3
+django-debug-toolbar~=6.2.0
