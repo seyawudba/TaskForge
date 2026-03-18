@@ -26,6 +26,13 @@ class Workspace(Timer):
     def __str__(self):
         return self.name
 
+    class Meta:
+        indexes = [
+            models.Index(
+                fields=["owner", "-created_at"]
+            )
+        ]
+
 class Project(Timer):
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
@@ -37,6 +44,12 @@ class Project(Timer):
         return self.name
     
     class Meta:
+        indexes = [
+            models.Index(
+                fields=["workspace", "-created_at"]
+            )
+        ]
+
         constraints = [
             models.UniqueConstraint(
                 fields=["workspace", "name"],
@@ -64,7 +77,7 @@ class Task(Timer):
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
     status = models.CharField(max_length=50,db_index=True, default=StatusChoices.TASK_TO_DO, choices=StatusChoices.choices)
-    assignee = models.ManyToManyField(Membership, db_index=True, blank=True, related_name='assigned_tasks')
+    assignee = models.ManyToManyField(Membership, blank=True, related_name='assigned_tasks')
     workspace = models.ForeignKey(Workspace,on_delete=models.CASCADE,db_index=True, related_name='tasks')
     project = models.ForeignKey(Project, on_delete=models.CASCADE, db_index=True, related_name='tasks')
     severity = models.CharField(max_length=50, db_index=True, choices=SeverityChoices.choices,default=SeverityChoices.MEDIUM)
@@ -79,9 +92,6 @@ class Task(Timer):
         indexes = [
             models.Index(
                 fields=["project", "-created_at"]
-            ),
-            models.Index(
-                fields=["assignees", "-created_at"]
             ),
             models.Index(
                 fields=["status", "-created_at"]
